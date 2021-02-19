@@ -68,9 +68,9 @@ function create()
 
 	for (var i=0; i<5; i++){
 		planets[i] = new Planet("mesh"+i, {
-			radius: 10
+			radius: 7
 		}, game.scene);
-		planets[i].setPosition(new BABYLON.Vector3((i-2)*25,0,0));
+		planets[i].setPosition(new BABYLON.Vector3((i-2)*25,0,10));
 		planets[i].setSun(light.direction);
 	}
 
@@ -79,9 +79,10 @@ function create()
 	// var csmShadowGenerator = new BABYLON.ShadowGenerator(1024, light);
   // csmShadowGenerator.usePercentageCloserFiltering = true;
   csmShadowGenerator.transparencyShadow = true;
+	csmShadowGenerator.enableSoftTransparentShadow = true;
 
 
-	var ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 100, height: 100}, game.scene);
+	var ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 200, height: 100}, game.scene);
 	ground.receiveShadows = true;
 	var sphere = BABYLON.MeshBuilder.CreateSphere("sss", {diameter: 5*2, segments: 32}, game.scene);
 	sphere.position = new BABYLON.Vector3(0, 0, 5);
@@ -133,7 +134,7 @@ function step()
 		planets[i].rotation.x = -planets[i].rotation.y;
 		planets[i].rotation.z = (-planets[i].rotation.x - planets[i].rotation.y) % (Math.PI*2.0);
 
-		if (UTILS.distanceToPoint3DV(game.scene.activeCamera.position, planets[i].position) < planets[i].radius*2.0){
+		if (UTILS.distanceToPoint3DV(game.scene.activeCamera.position, planets[i].position) < planets[i].radius*1.5){
 			CURRENT_MARCHER_OBJECT = planets[i];
 		}
 	}

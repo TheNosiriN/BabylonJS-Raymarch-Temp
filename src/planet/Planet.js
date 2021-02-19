@@ -102,7 +102,7 @@ function initObjectMarcherPostProcess(camera, game)
 	var pp = new BABYLON.PostProcess(
       "SOCA", "Planet",
       [
-				"TIME", "world",
+				"TIME", "world", "worldInv",
 				"Radius", "MaxHeight", "SEED", "Position",
 
 				"sunDir",
@@ -134,6 +134,7 @@ function initObjectMarcherPostProcess(camera, game)
 				effect.setVector3("sunDir", obj.sunDir);
 				effect.setVector3("Position", obj.position);
 				effect.setMatrix("world", obj.getWorldMatrix());
+				effect.setMatrix("worldInv", obj.getWorldMatrix().invert());
 
 
 				effect.setTexture("depthMap", game.depthRenderer.getDepthMap());

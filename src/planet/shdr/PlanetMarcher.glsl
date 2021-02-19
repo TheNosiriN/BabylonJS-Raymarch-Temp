@@ -3,12 +3,13 @@ precision highp sampler2D;
 
 #ifndef POST_PROCESS_LEVEL
 varying vec3 vPosition;
+varying vec3 vRayDir;
 #else
 uniform sampler2D textureSampler;
-uniform bool RUNNING;
 #endif
 
 uniform mat4 world;
+uniform mat4 worldInv;
 uniform sampler2D depthMap;
 
 
@@ -21,7 +22,6 @@ uniform vec3 sunDir;
 uniform float Radius;
 uniform vec3 Position;
 uniform float maxHeight;
-uniform vec3 cameraPosition;
 
 
 
@@ -107,11 +107,11 @@ float floatingThing(vec3 p, float scale)
 
 vec3 comp(vec3 p)
 {
-	/* vec3 q = abs(p) - Radius/1.25;
+	vec3 q = abs(p) - Radius/1.25;
 	float d = max(q.y, max(q.x, q.z));
 
 	float m = d;
-	d = max(d, -(length(p)-Radius)); */
+	d = max(d, -(length(p)-Radius));
 
 	/* d = min( max(m+Radius/3.0, -(length(p)-Radius/1.75 )), d ); */
 	/* d = min( max(m+Radius/2.5+Radius/2.5, -(length(p)-Radius/2.5 )), d ); */
@@ -120,14 +120,16 @@ vec3 comp(vec3 p)
 	/* for (float i=1.0; i<=4.0; i++){
 		float pp = i/5.0;float diff = 2.0;
 		d = min( max(m+Radius/(diff/pp), -(length(p)-Radius/(diff*pp+(pp/diff)) )), d );
-	}
-	d = min(d, length(p)-Radius/6.0); */
+	} */
+	d = min(d, length(p)-Radius/6.0);
 
 	/* p *= 2.0; */
-	float d = floatingThing(p, 3.0);
+	/* float d = floatingThing(p, 2.0); */
 
 	return vec3(d, 0,0);
 }
+
+
 
 
 vec4 raymarch(vec3 eye, vec3 dir, float start, float maxdist)
@@ -135,13 +137,76 @@ vec4 raymarch(vec3 eye, vec3 dir, float start, float maxdist)
     vec3 info = vec3(0);
     float depth = start, i;
     for (i=0.0; i<256.0 && depth<maxdist; i++){
-        vec3 p = vec3(world * vec4(eye + depth * dir, 1))-Position;
+				#ifdef POST_PROCESS_LEVEL
+				vec3 p = vec3(inverse(world) * vec4(eye + depth * dir,1));
+				#else
+				vec3 p = eye + depth * dir;
+				#endif
         info = comp(p);
-        if (abs(info.x) < EPSILON * depth)break;
-        depth += info.x;// * remap(i,0.0,256.0,0.5,1.0);
+        if (abs(info.x) < EPSILON)break;
+        depth += info.x;
     }
     return vec4(depth, info.yz, i/256.0);
 }
+
+
+
+
+
+
+
+/* vec4 raymarch(vec3 eye, vec3 dir, float start, float maxdist)
+{
+    float omega = 1.2;
+    float t = start;
+    float candidate_error = maxdist;
+    float candidate_t = 0.0;
+    float previousRadius = 0.0;
+    float stepLength = 0.0;
+    float functionSign = comp(eye).x < 0.0 ? -1.0 : +1.0;
+    float pixelRadius = 1.0/camera.size.x;
+    bool forceHit = false;
+    vec3 info;
+
+    float i;
+    for (i = 0.0; i < 256.0; ++i)
+    {
+				vec3 p = vec3(world * vec4(eye + t * dir, 1))-Position;
+				info = comp(p);
+
+        float signedRadius = functionSign * info.x;
+        float radius = abs(signedRadius);
+        bool sorFail = omega > 1.0 &&
+        (radius + previousRadius) < stepLength;
+
+        if (sorFail) {
+            stepLength -= omega * stepLength;
+            omega = 1.0;
+        } else {
+            stepLength = signedRadius * omega;
+        }
+        previousRadius = radius;
+        float error = radius / t;
+        if (!sorFail && error < candidate_error) {
+            candidate_t = t;
+            candidate_error = error;
+        }
+        if (!sorFail && error < pixelRadius || t > maxdist)break;
+
+				t += stepLength;
+    }
+    if ((t > maxdist || candidate_error > pixelRadius) &&
+    !forceHit) return vec4(maxdist,0,0,0);
+
+    return vec4(candidate_t, info.yz, i/256.0);
+
+} */
+
+
+
+
+
+
 
 
 
@@ -159,45 +224,46 @@ vec3 normal(vec3 p)
 
 
 
-vec4 makeObj()
+vec4 makeObj(vec3 cameraPos, vec2 uv)
 {
 		vec4 color;
-		vec2 uv = gl_FragCoord.xy/camera.size;
-
-		//construct ray
-
-		vec3 cameraPos = camera.position - Position;
-
-		#ifdef POST_PROCESS_LEVEL
-		float startdist = 0.0;
-		#else
-		vec3 vPositionW = vec3(world * vec4(vPosition, 1.0));
-		float startdist = distance(cameraPos, vPositionW-Position);
-		#endif
-
-		vec3 eye = cameraPos;
-		vec3 dir = getUVRay(uv);//getFragmentRay(eye, gl_FragCoord.xy);
 
 
 		//get current depth
-		float maxdist = startdist + Radius*3.0;
-
 		float depth = texture2D(depthMap, uv).r;
 		float rdepth = remap(depth, 0.0, 1.0, camera.near, camera.far);
 		rdepth = toWorldSpace(rdepth, uv);
 
 
+		//construct ray
+		#ifdef POST_PROCESS_LEVEL
+		vec3 eye = cameraPos;
+		vec3 dir = getUVRay(uv);
+		#else
+		vec3 eye = vPosition;
+		vec3 dir = normalize(vRayDir);
+		rdepth -= distance(vec3(inverse(world) * vec4(cameraPos, 1.0)), vPosition);
+		#endif
+
+
+
+
 		//march
-		vec4 dist = raymarch(cameraPos, dir, startdist, maxdist);
-		dist.x = min(dist.x, rdepth);
+		float maxdist = 0.0 + Radius*3.0;
+		vec4 dist = raymarch(eye, dir, 0.0, maxdist);
 
 		//shade
-		if (dist.x < maxdist && dist.x != rdepth){
-			vec3 P = vec3(world * vec4(eye + dir * dist.x, 1));
-			vec3 N = normalize(vec3(inverse(world) * vec4(normal(P-Position), 0)));
+		if (dist.x < maxdist && dist.x < rdepth){
+			#ifdef POST_PROCESS_LEVEL
+			vec3 P = vec3(worldInv * vec4(eye + dir * dist.x, 1));
+			vec3 N = normalize(vec3(world * vec4(normal(P), 0)));
+			#else
+			vec3 P = eye + dir * dist.x;
+			vec3 N = normalize(vec3(world * vec4(normal(P), 0)));
+			#endif
 
 			float shading = saturate(dot(N, -sunDir)*0.5+0.25);
-      shading = mix(min(1.0,shading*3.0), shading, dot(normalize(eye), N));
+      shading = mix(shading, shading*0.5, saturate(dot(N, normalize(cameraPos))) );
 
 			shading = mix(shading*0.5, shading, saturate(1.0-pow(dist.w,3.0)*3.0));
 			color.xyz += shading;
@@ -216,12 +282,18 @@ vec4 makeObj()
 
 
 void main(void){
-	vec4 color = makeObj();
+	vec2 uv = gl_FragCoord.xy/camera.size;
+	vec4 color = makeObj(camera.position, uv);
 
 	#ifdef POST_PROCESS_LEVEL
-	color = mix(texture(textureSampler, gl_FragCoord.xy/camera.size), color, color.a);
+	color = mix(texture(textureSampler, uv), color, color.a);
 	#else
-	if (color.a <= 0.0) discard;
+	if (color.a <= 0.0){color.a = 0.25;}//discard;
+
+	float alpha = color.a;
+	#define SHADOWDEPTH_SOFTTRANSPARENTSHADOW
+  #define SHADOWDEPTH_FRAGMENT
+
 	#endif
 
 	gl_FragColor = color;
